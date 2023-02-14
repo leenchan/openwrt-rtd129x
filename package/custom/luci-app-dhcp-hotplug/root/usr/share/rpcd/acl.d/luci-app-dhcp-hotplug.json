@@ -1,0 +1,17 @@
+{
+	"luci-app-dhcp-hotplug": {
+		"description": "Grant access to DHCP Hotplug",
+		"read": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/etc/hotplug.d/dhcp/90-dhcp-hotplug": [ "exec" ],
+				"/var/log/dhcp-hotplug.txt": [ "read" ]
+			},
+			"uci": [ "dhcp-hotplug" ]
+		},
+		"write": {
+			"uci": [ "dhcp-hotplug" ]
+		}
+	}
+}
+

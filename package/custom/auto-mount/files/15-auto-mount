@@ -1,0 +1,68 @@
+#!/bin/sh
+# ACTION 	For normal device (e.g: sda) it is either “add” or “remove”. Can be “change” if the device is dm-crypt (e.g: dm-0)
+# DEVICENAME 	seems same as DEVNAME below
+# DEVNAME 	Device or partition name (if I connect a drive I get a hotplug call with “sda” and another hotplug call with “sda1”)
+# DEVPATH 	full device path (for example “/devices/pci0000:00/0000:00:0b.0/usb1/1-1/1-1:1.0/host7/target7:0:0/7:0:0:0/block/sdc/sdc1 ”
+# DEVTYPE 	what the DEVNAME e DEVICENAME are names of, I've seen “partition” here when a device with a readable partition is inserted and a “disk” when that device is removed.
+# MAJOR 	major device number
+# MINOR 	minor device number
+# SEQNUM 	seqnum (a number)
+# SUBSYSTEM 	seems this is only “block” 
+
+# env >> /tmp/auto-mount.txt
+
+get_mount_point() {
+	mount | awk "\$1==\"$1\" {print \$3}"
+}
+
+is_mount_point() {
+	_DEV_=$(mount | awk "\$3==\"$1\" {print \$1}")
+	[ -z "$_DEV_" ] && return 1 || return 0
+}
+
+is_mounted() {
+	[ -z "$1" ] && return 1
+	mount | awk '{print $1}' | grep -Eq "^$1$" && return 0
+	return 1
+}
+
+log_print() {
+	# echo "$1"
+	echo "$1" >> /tmp/auto-mount.txt
+}
+
+is_dir_empty() {
+	[ -d "$1" ] && [ "$(ls -a $1 | grep -Ev '^\.+$' | wc -l)" = "0" ] && return 0
+	return 1
+}
+
+# BLOCK_INFO=$(block info)
+DEVICE="/dev/$DEVNAME"
+MOUNT_TO="/mnt/$DEVNAME"
+
+case "$DEVTYPE" in
+	"partition")
+		case "$ACTION" in
+			"add")
+				is_mounted "$DEVICE" || is_mount_point "$MOUNT_TO" || {
+					mkdir -p "$MOUNT_TO"
+					chmod 777 "$MOUNT_TO"
+					if mount -o rw,noatime,discard "$DEVICE" "$MOUNT_TO"; then
+						log_print "[OK] $DEVICE -> $MOUNT_TO"
+					else
+						is_dir_empty "$MOUNT_TO" && rm -rf "$MOUNT_TO"
+						log_print "[ERR] Failed to mount $DEVICE -> $MOUNT_TO"
+					fi
+				}
+				;;
+			"remove")
+				is_mount_point "$MOUNT_TO" || {
+					is_dir_empty "$MOUNT_TO" && rm -rf "$MOUNT_TO"
+				}
+				;;
+		esac
+		;;
+	*)
+		echo ""
+		;;
+esac

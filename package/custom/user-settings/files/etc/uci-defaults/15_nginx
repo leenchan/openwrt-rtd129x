@@ -1,0 +1,11 @@
+#!/bin/sh
+
+uci -q get nginx || exit 0
+
+uci -q batch <<-EOF >/dev/null
+	delete nginx._redirect2ssl.return
+	set nginx._redirect2ssl.include='conf.d/*.locations'
+	commit nginx
+EOF
+
+exit 0

@@ -1,0 +1,21 @@
+#!/bin/sh
+
+uci -q get qbittorrent || exit 0
+
+uci -q batch <<-EOF >/dev/null
+	set qbittorrent.config.webui_port='30000'
+	commit qbittorrent
+EOF
+
+cat <<-EOF > /etc/nginx/conf.d/ttyd.locations
+location /bt/ {
+	proxy_pass         http://127.0.0.1:30000/;
+	proxy_http_version 1.1;
+	proxy_set_header   Host               127.0.0.1:30000;
+	proxy_set_header   X-Forwarded-Host   \$http_host;
+	proxy_set_header   X-Forwarded-For    \$remote_addr;
+	proxy_cookie_path  /                  "/; Secure";
+}
+EOF
+
+exit 0

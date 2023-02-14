@@ -1,0 +1,161 @@
+#!/bin/sh
+. /lib/functions.sh
+. /lib/functions/network.sh
+
+nic="${nic:-wan}"
+realnic=$(uci get network.${nic}.device)
+log_file=/var/log/wan-auto-switch.txt
+
+print_msg() {
+	_TIME_=$(date "+%Y-%m-%d %H:%M:%S")
+	_MSG_="[$_TIME_] $@"
+	echo "$_MSG_" | tee -a $log_file
+}
+
+check_dhcp() {
+	udhcpc -B -C -n -s /bin/true -t 1 -i $realnic -T $timeout >/dev/null 2>&1 && WAN_PROTO="dhcp" && return 0
+	return 1
+	# CHECK_DHCP_ID=$!
+}
+
+check_pppoe() {
+	pppoe-discovery -I $realnic -t $timeout >/dev/null 2>&1 && WAN_PROTO="pppoe" && return 0
+	return 1
+	# CHECK_PPPOE_ID=$!
+}
+
+clean_all() {
+	kill -9 $(ps | grep "udhcpc -B -C" | awk '{print $1}') >/dev/null 2>&1
+	kill -9 $(ps | grep "pppoe-discovery") >/dev/null 2>&1
+}
+
+main() {
+	config_get enable $1 "enable"
+	config_get timeout $1 "timeout"
+	timeout=${timeout:-1}
+}
+
+get_wan_proto() {
+	WAN_PROTO=""
+	check_pppoe || check_dhcp
+	clean_all
+	[ -z "$WAN_PROTO" ] && return 1 || return 0
+}
+
+switch_to_pppoe() {
+	# return 0
+	uci -q batch <<-EOF >/dev/null
+	add_list dhcp.${nic}.ra_flags='none'
+	del dhcp.${nic}.ra_flags
+	add_list dhcp.${nic}.ra_flags='none'
+	commit dhcp
+	set network.${nic}.proto='pppoe'
+	set network.${nic}.username='$username'
+	set network.${nic}.password='$password'
+	set network.${nic}.ipv6='auto'
+	commit network
+	EOF
+}
+
+switch_to_dhcp() {
+	# return 0
+	uci -q batch <<-EOF >/dev/null
+	del dhcp.${nic}.ra_flags
+	add_list dhcp.${nic}.ra_flags='none'
+	del dhcp.${nic}.ra_flags
+	add_list dhcp.${nic}.ra_flags='none'
+	commit dhcp
+	del network.${nic}.username
+	del network.${nic}.password
+	del network.${nic}.ipv6
+	set network.${nic}.proto='dhcp'
+	commit network
+	EOF
+}
+
+switch_to_static() {
+	# return 0
+	uci -q batch <<-EOF >/dev/null
+	del dhcp.${nic}.ra_flags
+	add_list dhcp.${nic}.ra_flags='none'
+	set dhcp.${nic}.start='100'
+	set dhcp.${nic}.limit='150'
+	set dhcp.${nic}.leasetime='12h'
+	del dhcp.${nic}.ra_flags
+	add_list dhcp.${nic}.ra_flags='none'
+	commit dhcp
+	set network.${nic}.proto='static'
+	set network.${nic}.ipaddr='${ipv4_address}'
+	set network.${nic}.gateway='${ipv4_gateway}'
+	$([ -z "$ipv4_netmask" ] || echo "set network.${nic}.netmask='${ipv4_netmask}'")
+	commit network
+	EOF
+}
+
+switch_wan_proto() {
+	[ "$SWITCHED" = "1" ] && return 1
+	[ "$SKIP" = "1" ] && return 1
+	config_get enable $1 "enable"
+	[ "$enable" = "1" ] || return 1
+	config_get proto $1 "proto"
+	[ "$WAN_PROTO" = "$proto" ] || return 1
+	case "$proto" in
+		"dhcp")
+			[ "$_proto" = "$proto" ] && SKIP="1" && return 1
+			switch_to_dhcp
+			;;
+		"pppoe")
+			config_get username $1 "username"
+			config_get password $1 "password"
+			[ "$_proto" = "$proto" -a "$_username" = "$username" -a "$_password" = "$password" ] && SKIP="1" && return 1
+			switch_to_pppoe
+			wan_info_detail=" (username: $username / password: $password)"
+			;;
+		"static")
+			config_get ipv4_address $1 "ipv4_address"
+			config_get ipv4_gateway $1 "ipv4_gateway"
+			config_get ipv4_netmask $1 "ipv4_netmask"
+			[ "$_proto" = "$proto" -a "$_ipv4_address" = "$ipv4_address" -a "$_ipv4_gateway" = "$ipv4_gateway" -a "$_ipv4_netmask" = "$ipv4_netmask" ] && SKIP="1" && return 1
+			switch_to_static
+			wan_info_detail=" (ipv4_address: $ipv4_address / ipv4_gateway: $ipv4_gateway / ipv4_netmask: ${ipv4_netmask})"
+			;;
+	esac
+	SWITCHED="1"
+	wan_info="Switched to: $proto$wan_info_detail"
+	return 0
+}
+
+restart_wan() {
+	# timeout=$(uci get wan-auto-switch.@general[0].timeout)
+	ifdown $nic && ifup $nic
+	exit 0
+}
+
+auto_switch() {
+	[ "$ACTION" = "ifup" -a "$INTERFACE" = "$nic" ] || return 1
+	config_load "wan-auto-switch"
+	config_foreach main "general"
+	[ "$enable" = "1" ] || return 1
+	get_wan_proto || return 1
+	_proto=$(uci get network.${nic}.proto 2>/dev/null)
+	_username=$(uci get network.${nic}.username 2>/dev/null)
+	_password=$(uci get network.${nic}.password 2>/dev/null)
+	_ipv4_address=$(uci get network.${nic}.ipaddr 2>/dev/null)
+	_ipv4_gateway=$(uci get network.${nic}.gateway 2>/dev/null)
+	_ipv4_netmask=$(uci get network.${nic}.netmask 2>/dev/null)
+	print_msg "[INFO] WAN Protocol: $WAN_PROTO (uci: $_proto)"
+	SWITCHED="0"
+	SKIP="0"
+	config_foreach switch_wan_proto "mode"
+	if [ "$SWITCHED" = "1" ]; then
+		/etc/init.d/network restart
+		# ifdown $nic && ifup $nic
+		print_msg "[OK] $wan_info"
+	elif [ "$SKIP" = "1" ]; then
+		print_msg "[INFO] Skip Switching WAN Protocol."
+	fi
+}
+
+[ "$1" = "restart" ] && restart_wan
+
+auto_switch

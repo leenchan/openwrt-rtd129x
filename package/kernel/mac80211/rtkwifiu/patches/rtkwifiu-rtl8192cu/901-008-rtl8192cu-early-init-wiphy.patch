@@ -1,0 +1,39 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192cu/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192cu/os_dep/linux/os_intfs.c
+@@ -1286,7 +1286,7 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
+ 		}
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ #endif
+ 
+ 		padapter->bup = _TRUE;
+@@ -1661,7 +1661,7 @@ int _netdev_if2_open(struct net_device *pnetdev)
+ 		padapter->hw_init_completed = _TRUE;
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ #endif
+ 
+ 		padapter->bup = _TRUE;
+@@ -2047,6 +2047,9 @@ int rtw_drv_register_netdev(_adapter *if1)
+ 				if((status = _rtw_drv_register_netdev(padapter, name)) != _SUCCESS) {
+ 					break;
+ 				}
++#ifdef CONFIG_IOCTL_CFG80211
++				rtw_cfg80211_init_wiphy(padapter);
++#endif
+ 			}
+ 		}
+ 	}
+@@ -2101,7 +2104,7 @@ int _netdev_open(struct net_device *pnetdev)
+ 		}
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ #endif
+ 
+ 		rtw_led_control(padapter, LED_CTL_NO_LINK);

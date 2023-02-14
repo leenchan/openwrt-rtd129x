@@ -1,0 +1,11 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bu/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bu/os_dep/linux/os_intfs.c
+@@ -253,7 +253,7 @@ int rtw_bfee_rf_number = 0; /*BeamformeeCapRfNum  Rf path number, 0 for auto, ot
+ /*
+  * DHCWIFI-73: Enable 11AC products GO/Soft-AP default VHT80. rtw_vht_enable = 2
+  */
+-int rtw_vht_enable = 2; //0:disable, 1:enable, 2:force auto enable
++int rtw_vht_enable = 1; //0:disable, 1:enable, 2:force auto enable
+ module_param(rtw_vht_enable, int, 0644);
+ 
+ int rtw_ampdu_factor = 7;

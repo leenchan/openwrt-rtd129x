@@ -1,0 +1,30 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8189es/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8189es/os_dep/linux/os_intfs.c
+@@ -1776,6 +1776,9 @@ int rtw_os_ndevs_alloc(struct dvobj_priv *dvobj)
+ 				rtw_warn_on(1);
+ 				break;
+ 			}
++#ifdef CONFIG_IOCTL_CFG80211
++			rtw_cfg80211_init_wiphy(adapter);
++#endif
+ 		}
+ 	}
+ 
+@@ -2598,7 +2601,7 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
+ #endif
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-	rtw_cfg80211_init_wiphy(padapter);
++	/* rtw_cfg80211_init_wiphy(padapter); */
+ 	rtw_cfg80211_init_wdev_data(padapter);
+ #endif
+ 
+@@ -3245,7 +3248,7 @@ int _netdev_open(struct net_device *pnetdev)
+ #endif /* !RTW_HALMAC */
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ 		rtw_cfg80211_init_wdev_data(padapter);
+ #endif
+ 

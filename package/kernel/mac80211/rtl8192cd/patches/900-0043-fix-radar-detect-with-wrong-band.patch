@@ -1,0 +1,65 @@
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
+@@ -11020,27 +11020,35 @@ static void MDL_DEVINIT set_mib_default(
+             || GET_CHIP_VER(priv) == VERSION_8192C || GET_CHIP_VER(priv) == VERSION_8188E
+             || GET_CHIP_VER(priv) == VERSION_8197F || GET_CHIP_VER(priv) == VERSION_8723B){
+ 	    priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_2G;
++	    priv->pmib->dot11BssType.net_work_type = WIRELESS_11B | WIRELESS_11G;
+ 	} else if (GET_CHIP_VER(priv) == VERSION_8822B || GET_CHIP_VER(priv) == VERSION_8812E){
+ 	    priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_5G;
++	    priv->pmib->dot11BssType.net_work_type = WIRELESS_11A;
+ 	} else if (GET_CHIP_VER(priv) == VERSION_8814A){
+ 	    priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_2G;
++	    priv->pmib->dot11BssType.net_work_type = WIRELESS_11B | WIRELESS_11G;
+ 	    if (priv->pshare->wlandev_idx == 0) {
+ #ifdef CONFIG_BAND_5G_ON_WLAN0
+ 			priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_5G;
++			priv->pmib->dot11BssType.net_work_type = WIRELESS_11A;
+ #endif
+ 		} else if  (priv->pshare->wlandev_idx == 1) {
+ #ifndef CONFIG_BAND_5G_ON_WLAN0
+ 			priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_5G;
++			priv->pmib->dot11BssType.net_work_type = WIRELESS_11A;
+ #endif
+ 		}
+ 	}else if (GET_CHIP_VER(priv) == VERSION_8192D){
+ 		if (priv->pshare->wlandev_idx == 0) {
+ 			priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_5G;
++			priv->pmib->dot11BssType.net_work_type = WIRELESS_11A;
+ 		} else {
+ 			priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_2G;
++			priv->pmib->dot11BssType.net_work_type = WIRELESS_11B | WIRELESS_11G;
+ 		}
+ 	} else if (GET_CHIP_VER(priv) == VERSION_8881A){
+ 	    priv->pmib->dot11RFEntry.phyBandSelect = PHY_BAND_5G;
++	    priv->pmib->dot11BssType.net_work_type = WIRELESS_11A;
+ 	}
+ 
+ #if defined(CONFIG_SLOT_0_TX_BEAMFORMING) || defined(CONFIG_SLOT_1_TX_BEAMFORMING)
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_net80211.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_net80211.c
+@@ -224,10 +224,8 @@ int	rtl_wpas_join(struct rtl8192cd_priv
+ #ifdef RTK_NL80211
+ 	if(priv->pmib->dot11Bss.channel >=36)
+ 	{
+-		if(GET_CHIP_VER(priv)==VERSION_8812E || GET_CHIP_VER(priv)==VERSION_8881A || GET_CHIP_VER(priv)==VERSION_8814A || GET_CHIP_VER(priv)==VERSION_8822B)
+-			priv->pmib->dot11BssType.net_work_type = WIRELESS_11A|WIRELESS_11N|WIRELESS_11AC;
+-		else
+-			priv->pmib->dot11BssType.net_work_type = WIRELESS_11A|WIRELESS_11N;
++		priv->pmib->dot11BssType.net_work_type = WIRELESS_11A|WIRELESS_11N|WIRELESS_11AC;
++		priv->pmib->dot11nConfigEntry.dot11nShortGIfor80M = 1;
+ 	}
+ 	else
+ 	{
+@@ -244,11 +242,6 @@ int	rtl_wpas_join(struct rtl8192cd_priv
+ 	priv->pmib->dot11nConfigEntry.dot11nShortGIfor20M = 1;
+ 	priv->pmib->dot11nConfigEntry.dot11nShortGIfor40M = 1;
+ 
+-	extern int is_support_ac(struct rtl8192cd_priv *priv);
+-    
+-	if(is_support_ac(priv))
+-		priv->pmib->dot11nConfigEntry.dot11nShortGIfor80M = 1;
+-
+ #if defined(CONFIG_WLAN_HAL_8814AE) || defined(CONFIG_WLAN_HAL_8822BE)
+ #if defined(SUPPORT_TX_AMSDU)
+ 	if(GET_CHIP_VER(priv) == VERSION_8814A || GET_CHIP_VER(priv) == VERSION_8822B)

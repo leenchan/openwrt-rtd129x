@@ -1,0 +1,13 @@
+# Copyright (C) 2006-2015 OpenWrt.org
+# Copyright (C) 2010 Vertical Communications
+
+failsafe_shell() {
+	local console=console
+	[ -c "/dev/$console" ] || return 0
+	while true; do
+		ash --login <"/dev/$console" >"/dev/$console" 2>"/dev/$console"
+		sleep 1
+	done &
+}
+
+boot_hook_add failsafe failsafe_shell

@@ -1,0 +1,8 @@
+#!/bin/sh
+
+[ "${ACTION}" = "add" ] && {
+	[ -f "/etc/config/wireless" ] || {
+		[ -f "/etc/config/wireless.bak" ] && cp "/etc/config/wireless.bak" "/etc/config/wireless" && wifi up && exit
+	}
+	/sbin/wifi config
+}

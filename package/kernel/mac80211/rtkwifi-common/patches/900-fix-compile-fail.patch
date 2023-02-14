@@ -1,0 +1,56 @@
+--- a/compat/backport-4.5.c
++++ b/compat/backport-4.5.c
+@@ -96,6 +96,7 @@ void *memdup_user_nul(const void __user
+ }
+ EXPORT_SYMBOL_GPL(memdup_user_nul);
+ 
++#ifdef CONFIG_LEDS_TRIGGERS
+ static void devm_led_trigger_release(struct device *dev, void *res)
+ {
+ 	led_trigger_unregister(*(struct led_trigger **)res);
+@@ -123,3 +124,4 @@ int devm_led_trigger_register(struct dev
+ 	return rc;
+ }
+ EXPORT_SYMBOL_GPL(devm_led_trigger_register);
++#endif
+--- a/include/net/cfg80211.h
++++ b/include/net/cfg80211.h
+@@ -64,6 +64,26 @@
+ struct wiphy;
+ 
+ /*
++ * enum ieee80211_band - supported frequency bands
++ *
++ * The bands are assigned this way because the supported
++ * bitrates differ in these bands.
++ *
++ * @IEEE80211_BAND_2GHZ: 2.4GHz ISM band
++ * @IEEE80211_BAND_5GHZ: around 5GHz band (4.9-5.7)
++ * @IEEE80211_BAND_60GHZ: around 60 GHz band (58.32 - 64.80 GHz)
++ * @IEEE80211_NUM_BANDS: number of defined bands
++ */
++enum ieee80211_band {
++       IEEE80211_BAND_2GHZ = NL80211_BAND_2GHZ,
++       IEEE80211_BAND_5GHZ = NL80211_BAND_5GHZ,
++       IEEE80211_BAND_60GHZ = NL80211_BAND_60GHZ,
++
++       /* keep last */
++       IEEE80211_NUM_BANDS
++};
++
++/*
+  * wireless hardware capability structures
+  */
+ 
+--- a/compat/backport-4.12.c
++++ b/compat/backport-4.12.c
+@@ -226,7 +226,9 @@ int bp_extack_genl_register_family(struc
+ 	/* copy this since the family might access it directly */
+ 	family->id = copy->family.id;
+ 	family->attrbuf = copy->family.attrbuf;
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0))
+ 	family->mcgrp_offset = copy->family.mcgrp_offset;
++#endif
+ 
+ 	mutex_lock(&copies_mutex);
+ 	list_add_tail(&copy->list, &copies_list);

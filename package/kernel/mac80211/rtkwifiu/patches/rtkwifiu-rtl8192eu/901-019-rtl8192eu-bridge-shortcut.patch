@@ -1,0 +1,307 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/core/rtw_sta_mgt.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/core/rtw_sta_mgt.c
+@@ -556,6 +556,10 @@ u32	rtw_free_stainfo(_adapter *padapter , struct sta_info *psta)
+ 	if (psta == NULL)
+ 		goto exit;
+ 
++#ifdef RTL_CACHED_BR_STA
++	release_brsc_cache(psta->cmn.mac_addr);
++#endif
++
+ 	is_pre_link_sta = rtw_is_pre_link_sta(pstapriv, psta->cmn.mac_addr);
+ 
+ 	if (is_pre_link_sta == _FALSE) {
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/autoconf.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/autoconf.h
+@@ -332,3 +332,13 @@
+ /* RX use 1 urb */
+ /* #define CONFIG_SINGLE_RECV_BUF */
+ #define	DBG_RX_DFRAME_RAW_DATA
++
++#ifdef CONFIG_BR_EXT
++
++#define BR_SHORTCUT
++
++#ifdef BR_SHORTCUT
++#define RTL_CACHED_BR_STA
++#endif /* BR_SHORTCUT */
++
++#endif /* CONFIG_BR_EXT */
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/drv_types.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/drv_types.h
+@@ -565,6 +565,9 @@ struct rx_logs {
+ 	u32 os_indicate_ap_forward;
+ 	u32 os_indicate_ap_self;
+ 	u32 os_indicate_err;
++#ifdef BR_SHORTCUT
++	u32 os_indicate_brsc;
++#endif /* BR_SHORTCUT */
+ 	u32 os_netif_ok;
+ 	u32 os_netif_err;
+ };
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/osdep_service_linux.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/osdep_service_linux.h
+@@ -459,6 +459,21 @@ extern struct net_device *rtw_alloc_etherdev(int sizeof_priv);
+ #else
+ #define GET_BR_PORT(netdev)	br_port_get_rcu(netdev)
+ #endif
++
++#ifdef RTL_CACHED_BR_STA
++
++#define MAX_BRSC_NUM 8
++
++struct brsc_cache_t {
++	int occupy;         
++	unsigned long timestamp;     
++	unsigned char cached_br_sta_mac[ETH_ALEN];
++	struct net_device *cached_br_sta_dev;
++};
++
++void release_brsc_cache(unsigned char* da);
++#endif /* RTL_CACHED_BR_STA */
++
+ #endif //CONFIG_BR_EXT
+ 
+ #endif
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/os_dep/linux/recv_linux.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/os_dep/linux/recv_linux.c
+@@ -399,6 +399,208 @@ int rtw_recv_napi_poll(struct napi_struct *napi, int budget)
+ 	#define PAYLOAD_LEN_LOC_OF_IP_HDR 0x10 /*ethernet payload length location of ip header (DA + SA+eth_type+(version&hdr_len)) */
+ #endif
+ 
++#ifdef BR_SHORTCUT
++#ifdef RTL_CACHED_BR_STA
++
++#define TSF_LESS(a, b)	(((a - b) & 0x80000000) != 0)
++
++struct brsc_cache_t brsc_cache_arr[MAX_BRSC_NUM];
++
++struct brsc_cache_t* get_free_brsc_cache(void){
++	int idx;
++	int idxofoldest=0;
++
++	/*find free cache*/ 
++	for(idx=0;idx<MAX_BRSC_NUM;idx++) {
++		if(brsc_cache_arr[idx].occupy==0)
++			return &brsc_cache_arr[idx];    // found free cache
++	}
++
++	/*not found free cache , return oldest aging*/ 
++	for(idx=0;idx<MAX_BRSC_NUM;idx++){
++		if(TSF_LESS(brsc_cache_arr[idx].timestamp,brsc_cache_arr[idxofoldest].timestamp)) { // time stamp more less more old
++			idxofoldest=idx;
++		}
++	}
++	return &brsc_cache_arr[idxofoldest];    // found free cache
++
++};
++
++int query_brsc_cache(unsigned char* da)
++{
++	int idx;
++	/*find free cache*/ 
++	for(idx=0;idx<MAX_BRSC_NUM;idx++){
++		if(brsc_cache_arr[idx].occupy && _rtw_memcmp(brsc_cache_arr[idx].cached_br_sta_mac , da, ETH_ALEN))
++			return idx;    // found matched cache
++	}
++	return -1;
++};
++
++void add_to_brsc_cache(struct net_device *dev, unsigned char* da)
++{
++	struct brsc_cache_t* tmpcache=NULL;
++	tmpcache = get_free_brsc_cache();
++	if(tmpcache) {
++		memcpy(tmpcache->cached_br_sta_mac, da, ETH_ALEN);
++		tmpcache->cached_br_sta_dev = dev;
++		tmpcache->occupy = 1;
++		tmpcache->timestamp = jiffies;
++	}
++};
++
++void release_brsc_cache(unsigned char* da)
++{
++	int idx = query_brsc_cache(da);
++	if(idx>=0) {
++		memset(&brsc_cache_arr[idx],0,sizeof(struct brsc_cache_t));
++	}
++};
++#endif /* RTL_CACHED_BR_STA */
++
++
++static int rtl_IsMcastIP(_pkt *pskb)
++{
++	int ret=0;
++	unsigned short L3_protocol;
++	L3_protocol = *(unsigned short *)(pskb->data+ETH_ALEN*2);
++	
++	if( L3_protocol == __constant_htons(0x0800) )
++	{
++		unsigned int DaIpAddr;
++		struct iphdr* iph = (struct iphdr *)(pskb->data + ETH_HLEN);
++		
++		DaIpAddr = iph->daddr;
++		//panic_printk("[%s]:[%d],pskb:%x.\n",__FUNCTION__,__LINE__,DaIpAddr);
++
++		if((DaIpAddr & 0xF0000000) == 0xE0000000)  
++		{
++			ret=1;
++		}	
++	}
++	else if(L3_protocol == __constant_htons(0x86dd)) 
++	{	
++		struct ipv6hdr *iph;
++		iph  = (struct ipv6hdr *)(pskb->data + ETH_HLEN);
++		/*ip(v6) format is  multicast ip*/	
++		if (iph->daddr.s6_addr[0] == 0xff)
++		{
++			ret=1;
++		}
++	}
++	
++	//panic_printk("[%s]:[%d],ret:%x,pskb:%x-%x-%x-%x-%x-%x.\n",__FUNCTION__,__LINE__,ret,pskb->data[0],pskb->data[1],pskb->data[2],pskb->data[3],pskb->data[4],pskb->data[5]);
++	return ret;
++}
++
++unsigned char cached_sta_mac[1][ETH_ALEN];
++struct net_device *cached_sta_dev[1] = {NULL,NULL};
++
++struct net_device *get_shortcut_dev(_adapter *padapter, unsigned char *da)
++{
++	int i;
++	_adapter *current_adapter;
++	struct dvobj_priv *dvobj = adapter_to_dvobj(padapter);
++	struct sta_info *psta;
++	struct net_device *dev;
++	struct net_bridge_port *br_port = NULL;
++
++	#ifdef RTL_CACHED_BR_STA
++	for(i=0;i<MAX_BRSC_NUM;i++){
++		if(brsc_cache_arr[i].occupy && _rtw_memcmp(brsc_cache_arr[i].cached_br_sta_mac , da, ETH_ALEN)) {
++			RTW_DBG("BRSC: DA:%02X:%02X:%02X:%02X:%02X:%02X Get shortcut dev(%s) from cache\n", 
++			da[0], da[1], da[2], da[3], da[4], da[5], brsc_cache_arr[i].cached_br_sta_dev->name);
++			return brsc_cache_arr[i].cached_br_sta_dev;
++		}
++	}
++	#endif
++
++	dev = NULL;
++	for (i = 0; i < dvobj->iface_nums && (dev==NULL); i++) {
++		current_adapter = dvobj->padapters[i];
++		if(MLME_IS_AP(current_adapter) && _rtw_memcmp(da, adapter_mac_addr(current_adapter), ETH_ALEN))
++			break;
++
++		if(current_adapter &&  netif_running(current_adapter->pnetdev)) {
++			if (cached_sta_dev[0] && _rtw_memcmp(da, cached_sta_mac[0], ETH_ALEN)) {
++				RTW_DBG("BRSC: DA:%02X:%02X:%02X:%02X:%02X:%02X Get shortcut dev(%s) from cache_sta_dev\n", 
++				da[0], da[1], da[2], da[3], da[4], da[5], cached_sta_dev[0]->name);
++				return cached_sta_dev[0];
++			}
++
++			br_port = GET_BR_PORT(current_adapter->pnetdev);
++
++			if((padapter->bup) && !RTW_CANNOT_RUN(current_adapter) 
++			&& br_port && !(br_port->br->stp_enabled)) {
++				psta = rtw_get_stainfo(&current_adapter->stapriv, da);
++				if(psta) {
++					dev = current_adapter->pnetdev;
++					RTW_DBG("BRSC: DA:%02X:%02X:%02X:%02X:%02X:%02X Get shortcut dev(%s) from stainfo\n", __func__, da[0], da[1], da[2], da[3], da[4], da[5], dev->name);
++				}		
++			}
++		}
++	}
++
++#ifdef RTL_CACHED_BR_STA
++    if (dev!=NULL) {
++        add_to_brsc_cache(dev,da);		
++    }
++#endif
++
++	return dev;
++}
++
++static int gothrough_brsrc(_adapter *priv, _pkt *pskb)
++{	
++	struct net_device *cached_dev = NULL;
++	struct net_bridge_port *br_port = NULL;
++	unsigned char* cached_sta_macPtr = NULL;
++	struct net_device *cached_sta_devPtr = NULL;
++
++	/*if lltd, don't go shortcut*/
++	if (*(unsigned short *)(pskb->data+ETH_ALEN*2) == htons(0x88d9))
++		return 0;
++
++	br_port = GET_BR_PORT(priv->pnetdev);
++
++	if(MLME_IS_STA(priv)) {
++		memcpy(cached_sta_mac[0], &pskb->data[6], ETH_ALEN);
++		cached_sta_dev[0] = priv->pnetdev;
++
++		if (((cached_dev = get_shortcut_dev(priv, pskb->data)) != NULL)
++		&& netif_running(cached_dev)) {
++			RTW_DBG("BRSC: STA %s=>%s\n", priv->pnetdev->name, cached_dev->name);
++			pskb->dev = cached_dev;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
++			cached_dev->hard_start_xmit(pskb, cached_dev);
++#else
++			cached_dev->netdev_ops->ndo_start_xmit(pskb, cached_dev);
++#endif
++			return 1;
++		}
++
++	} else if(MLME_IS_AP(priv)) {
++		cached_sta_macPtr = cached_sta_mac[0];
++		cached_sta_devPtr = cached_sta_dev[0];
++
++		if(_rtw_memcmp(cached_sta_macPtr, pskb->data, ETH_ALEN) 
++		&& (cached_sta_devPtr != NULL) 
++		&& netif_running(cached_sta_devPtr)) {
++			RTW_DBG("BRSC: AP %s=>%s\n", priv->pnetdev->name, cached_sta_devPtr->name);
++			pskb->dev = cached_sta_devPtr;
++#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,0)
++			cached_sta_devPtr->hard_start_xmit(pskb, cached_sta_devPtr);
++#else
++			cached_sta_devPtr->netdev_ops->ndo_start_xmit(pskb,cached_sta_devPtr);
++#endif
++			return 1;
++		}
++	}
++	return 0;
++}
++
++#endif /* BR_SHORTCUT */
++
+ void rtw_os_recv_indicate_pkt(_adapter *padapter, _pkt *pkt, struct rx_pkt_attrib *pattrib)
+ {
+ 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
+@@ -457,13 +659,7 @@ void rtw_os_recv_indicate_pkt(_adapter *padapter, _pkt *pkt, struct rx_pkt_attri
+ 
+ #ifdef CONFIG_BR_EXT
+ 		/* Insert NAT2.5 RX here! */
+-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35))
+-		br_port = padapter->pnetdev->br_port;
+-#else   /* (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)) */
+-		rcu_read_lock();
+-		br_port = rcu_dereference(padapter->pnetdev->rx_handler_data);
+-		rcu_read_unlock();
+-#endif /* (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)) */
++		br_port = GET_BR_PORT(padapter->pnetdev);
+ 
+ 
+ 		if (br_port && (check_fwstate(pmlmepriv, WIFI_STATION_STATE | WIFI_ADHOC_STATE) == _TRUE)) {
+@@ -481,6 +677,15 @@ void rtw_os_recv_indicate_pkt(_adapter *padapter, _pkt *pkt, struct rx_pkt_attri
+ #endif
+ 			}
+ 		}
++
++#ifdef BR_SHORTCUT
++		if(rtl_IsMcastIP(pkt) == 0 && !(pkt->data[0] & 0x01) && (br_port)) {
++			if(gothrough_brsrc(padapter, pkt)) {
++				DBG_COUNTER(padapter->rx_logs.os_indicate_brsc);
++				return;
++			}
++		}
++#endif //BR_SHORTCUT
+ #endif /* CONFIG_BR_EXT */
+ 
+ 		if (precvpriv->sink_udpport > 0)

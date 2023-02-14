@@ -1,0 +1,13 @@
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
+@@ -6048,8 +6048,8 @@ static void rtl8192cd_init_vxd_mib(struc
+ 
+ #if (BEAMFORMING_SUPPORT == 1)
+ 	priv->pmib->dot11RFEntry.txbf = GET_ROOT(priv)->pmib->dot11RFEntry.txbf;
+-	priv->pmib->dot11RFEntry.txbf = GET_ROOT(priv)->pmib->dot11RFEntry.txbfer;
+-	priv->pmib->dot11RFEntry.txbf = GET_ROOT(priv)->pmib->dot11RFEntry.txbfee;
++	priv->pmib->dot11RFEntry.txbfer = GET_ROOT(priv)->pmib->dot11RFEntry.txbfer;
++	priv->pmib->dot11RFEntry.txbfee = GET_ROOT(priv)->pmib->dot11RFEntry.txbfee;
+ 	priv->pmib->dot11RFEntry.txbf_mu = GET_ROOT(priv)->pmib->dot11RFEntry.txbf_mu;
+ #endif
+ }

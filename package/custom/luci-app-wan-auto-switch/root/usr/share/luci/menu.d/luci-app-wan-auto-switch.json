@@ -1,0 +1,12 @@
+{
+	"admin/network/wan-auto-switch": {
+		"title": "WAN Auto-Switch",
+		"action": {
+			"type": "view",
+			"path": "wan-auto-switch"
+		},
+		"depends": {
+			"acl": [ "luci-app-wan-auto-switch" ]
+    }
+	}
+}

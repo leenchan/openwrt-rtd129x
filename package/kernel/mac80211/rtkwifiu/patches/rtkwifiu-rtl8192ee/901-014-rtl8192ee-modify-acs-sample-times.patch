@@ -1,0 +1,11 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/hal/hal_dm_acs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/hal/hal_dm_acs.c
+@@ -105,7 +105,7 @@ void rtw_acs_trigger(_adapter *adapter, u16 scan_time_ms, u8 scan_chan)
+ 
+ 	hal_data->acs.trigger_ch = scan_chan;
+ 	/*scan_time - ms ,1ms can sample 250 times*/
+-	sample_times = scan_time_ms * 250;
++	sample_times = scan_time_ms * 1;
+ 	phydm_ccx_monitor_trigger(phydm, sample_times);
+ 
+ 	#ifdef CONFIG_RTW_ACS_DBG

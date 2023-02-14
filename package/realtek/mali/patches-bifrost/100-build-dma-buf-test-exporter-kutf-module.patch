@@ -1,0 +1,18 @@
+diff --git a/Makefile b/Makefile
+index c59a0756c..885bba44f 100644
+--- a/Makefile
++++ b/Makefile
+@@ -9,8 +9,13 @@
+ install:
+ 	KDIR=$(PWD)/$(LINUX_KERNEL_PATH) \
+ 	CONFIG_MALI_MIDGARD=m \
++	CONFIG_MALI_KUTF=m \
+ 	make -C driver/product/kernel/drivers/gpu/arm/midgard
+ 	$(CROSS_COMPILE)strip driver/product/kernel/drivers/gpu/arm/midgard/mali_kbase.ko --strip-unneeded
++	$(CROSS_COMPILE)strip driver/product/kernel/drivers/gpu/arm/midgard/tests/kutf/kutf.ko --strip-unneeded
++	KDIR=$(PWD)/$(LINUX_KERNEL_PATH) \
++	make -C driver/product/kernel/drivers/base/dma_buf_test_exporter
++	$(CROSS_COMPILE)strip driver/product/kernel/drivers/base/dma_buf_test_exporter/dma-buf-test-exporter.ko --strip-unneeded
+ 
+ clean:
+ 	KDIR=$(PWD)/$(LINUX_KERNEL_PATH) \

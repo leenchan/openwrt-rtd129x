@@ -1,0 +1,14 @@
+#!/bin/sh
+
+pidof netdata && killall netdata
+rm -f /etc/rc.d/*netdata*
+
+[ -d "/etc/nginx/conf.d" ] && {
+cat <<-EOF >/etc/nginx/conf.d/netdata.locations
+location /netdata/ {
+proxy_pass http://127.0.0.1:19999/;
+}
+EOF
+}
+
+exit 0

@@ -1,0 +1,94 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/core/rtw_br_ext.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/core/rtw_br_ext.c
+@@ -530,7 +530,7 @@ static void __nat25_db_print(_adapter *priv)
+ 
+ 	counter++;
+ 	if ((counter % 16) != 0)
+-		return;
++		goto __nat25_db_print_end;
+ 
+ 	for (i = 0, j = 0; i < NAT25_HASH_SIZE; i++) {
+ 		db = priv->nethash[i];
+@@ -594,7 +594,7 @@ static void __nat25_db_print(_adapter *priv)
+ 		}
+ 	}
+ #endif
+-
++__nat25_db_print_end:
+ 	_exit_critical_bh(&priv->br_ext_lock, &irqL);
+ }
+ 
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/core/rtw_xmit.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/core/rtw_xmit.c
+@@ -1440,7 +1440,8 @@ static s32 update_attrib(_adapter *padapter, _pkt *pkt, struct pkt_attrib *pattr
+ 	} else if (0x888e == pattrib->ether_type)
+ 		RTW_PRINT("send eapol packet\n");
+ 
+-	if ((pattrib->ether_type == 0x888e) || (pattrib->dhcp_pkt == 1))
++	if ((pattrib->ether_type == 0x888e) 
++	|| ((pattrib->dhcp_pkt == 1) && (check_fwstate(&padapter->mlmepriv, WIFI_AP_STATE) == _FALSE)))
+ 		rtw_mi_set_scan_deny(padapter, 3000);
+ 
+ #ifdef CONFIG_LPS
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/include/osdep_service_linux.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/include/osdep_service_linux.h
+@@ -123,6 +123,10 @@
+ 	#include <linux/netlink.h>
+ #endif /* CONFIG_BT_COEXIST_SOCKET_TRX */
+ 
++#ifdef CONFIG_BR_EXT
++	#include <../net/bridge/br_private.h>
++#endif
++
+ #ifdef CONFIG_USB_HCI
+ 	typedef struct urb   *PURB;
+ 	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22))
+@@ -449,5 +453,12 @@ extern struct net_device *rtw_alloc_etherdev(int sizeof_priv);
+ 
+ #define STRUCT_PACKED __attribute__ ((packed))
+ 
++#ifdef CONFIG_BR_EXT
++#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35)
++#define GET_BR_PORT(netdev)	(netdev)->br_port
++#else
++#define GET_BR_PORT(netdev)	br_port_get_rcu(netdev)
++#endif
++#endif //CONFIG_BR_EXT
+ 
+ #endif
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/os_dep/linux/os_intfs.c
+@@ -2484,6 +2484,10 @@ void rtw_intf_stop(_adapter *adapter)
+ 		adapter->intf_stop(adapter);
+ }
+ 
++#ifdef CONFIG_BR_EXT
++void netdev_br_init(struct net_device *netdev);
++#endif
++
+ #ifdef CONFIG_CONCURRENT_MODE
+ int _netdev_vir_if_open(struct net_device *pnetdev)
+ {
+@@ -2555,6 +2559,10 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
+ 
+ 	rtw_netif_wake_queue(pnetdev);
+ 
++#ifdef CONFIG_BR_EXT
++	netdev_br_init(pnetdev);
++#endif
++
+ 	RTW_INFO(FUNC_NDEV_FMT" (bup=%d) exit\n", FUNC_NDEV_ARG(pnetdev), padapter->bup);
+ 
+ 	return 0;
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/os_dep/linux/rtw_cfgvendor.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/os_dep/linux/rtw_cfgvendor.h
+@@ -269,7 +269,9 @@ typedef unsigned char byte;
+ typedef int wifi_request_id;
+ typedef int wifi_channel;                       // indicates channel frequency in MHz
+ typedef int wifi_rssi;
++#ifndef CONFIG_BR_EXT
+ typedef byte mac_addr[6];
++#endif
+ typedef byte oui[3];
+ typedef int64_t wifi_timestamp;                 // In microseconds (us)
+ typedef int64_t wifi_timespan;                  // In picoseconds  (ps)

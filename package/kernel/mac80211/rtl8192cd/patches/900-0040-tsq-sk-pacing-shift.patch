@@ -1,0 +1,19 @@
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_tx.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_tx.c
+@@ -1337,6 +1337,16 @@ int rtl8192cd_start_xmit(struct sk_buff
+ 	unsigned long x;
+ #endif
+ 
++#ifdef RTK_129X_PLATFORM
++	/* We need a bit of data queued to build aggregates properly, so
++	 * instruct the TCP stack to allow more than a single ms of data
++	 * to be queued in the stack. The value is a bit-shift of 1
++	 * second, so 8 is ~4ms of queued data. Only affects local TCP
++	 * sockets.
++	 */
++	sk_pacing_shift_update(skb->sk, 6);
++#endif
++
+ #if defined(RTK_NL80211) && defined(MBSSID)
+ 	struct net_device *dev_vap = NULL;
+ 	if(ntohs(*((UINT16 *)((UINT8 *)skb->data + ETH_ALEN*2))) == 0x888e)

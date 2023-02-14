@@ -1,0 +1,12 @@
+{
+	"admin/network/dhcp-hotplug": {
+		"title": "DHCP Hotplug",
+		"action": {
+			"type": "view",
+			"path": "dhcp-hotplug"
+		},
+		"depends": {
+			"acl": [ "luci-app-dhcp-hotplug" ]
+    }
+	}
+}

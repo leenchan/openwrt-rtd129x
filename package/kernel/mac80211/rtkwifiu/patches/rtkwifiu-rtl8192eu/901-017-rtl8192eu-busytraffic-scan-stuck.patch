@@ -1,0 +1,72 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/core/rtw_mlme.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/core/rtw_mlme.c
+@@ -2791,22 +2791,29 @@ void rtw_scan_timeout_handler(void *ctx)
+ 	_adapter *adapter = (_adapter *)ctx;
+ 	_irqL irqL;
+ 	struct mlme_priv *pmlmepriv = &adapter->mlmepriv;
++	bool aborted = _TRUE;
+ 	RTW_INFO(FUNC_ADPT_FMT" fw_state=%x\n", FUNC_ADPT_ARG(adapter), get_fwstate(pmlmepriv));
+ 
+ 	_enter_critical_bh(&pmlmepriv->lock, &irqL);
+ 
+-	_clr_fwstate_(pmlmepriv, _FW_UNDER_SURVEY);
++	if(pmlmepriv->direct_indicate_scan_done==_TRUE) {
++		aborted = _FALSE;
++		pmlmepriv->direct_indicate_scan_done=_FALSE;
++	} else
++		_clr_fwstate_(pmlmepriv, _FW_UNDER_SURVEY);
+ 
+ 	_exit_critical_bh(&pmlmepriv->lock, &irqL);
+ 
++	RTW_INFO(FUNC_ADPT_FMT" aborted=%d\n", FUNC_ADPT_ARG(adapter), aborted);
++
+ #ifdef CONFIG_IOCTL_CFG80211
+ 	rtw_cfg80211_surveydone_event_callback(adapter);
+ #endif /* CONFIG_IOCTL_CFG80211 */
+ 
+-	rtw_indicate_scan_done(adapter, _TRUE);
++	rtw_indicate_scan_done(adapter, aborted);
+ 
+ #if defined(CONFIG_CONCURRENT_MODE) && defined(CONFIG_IOCTL_CFG80211)
+-	rtw_cfg80211_indicate_scan_done_for_buddy(adapter, _TRUE);
++	rtw_cfg80211_indicate_scan_done_for_buddy(adapter, aborted);
+ #endif
+ }
+ 
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/rtw_mlme.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/include/rtw_mlme.h
+@@ -650,6 +650,8 @@ struct mlme_priv {
+ 
+ 	_timer scan_to_timer; /* driver itself handles scan_timeout status. */
+ 	systime scan_start_time; /* used to evaluate the time spent in scanning */
++	bool direct_indicate_scan_done;
++
+ 
+ #ifdef CONFIG_SET_SCAN_DENY_TIMER
+ 	_timer set_scan_deny_timer;
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/os_dep/linux/ioctl_cfg80211.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192eu/os_dep/linux/ioctl_cfg80211.c
+@@ -2744,6 +2744,7 @@ static int cfg80211_rtw_scan(struct wiphy *wiphy
+ 
+ check_need_indicate_scan_done:
+ 	if (_TRUE == need_indicate_scan_done) {
++#if 0
+ #if (KERNEL_VERSION(4, 7, 0) <= LINUX_VERSION_CODE)
+ 		struct cfg80211_scan_info info;
+ 
+@@ -2757,6 +2758,15 @@ check_need_indicate_scan_done:
+ #else
+ 		cfg80211_scan_done(request, 0);
+ #endif
++#else
++		_enter_critical_bh(&pwdev_priv->scan_req_lock, &irqL);
++		_enter_critical_bh(&pmlmepriv->lock, &irqL);
++		pwdev_priv->scan_request = request;
++		mlme_set_scan_to_timer(pmlmepriv, 20);
++		pmlmepriv->direct_indicate_scan_done=_TRUE;
++		_exit_critical_bh(&pmlmepriv->lock, &irqL);
++		_exit_critical_bh(&pwdev_priv->scan_req_lock, &irqL);
++#endif
+ 	}
+ 
+ cancel_ps_deny:

@@ -1,0 +1,18 @@
+diff -ruN a/backport-include/linux/skbuff.h b/backport-include/linux/skbuff.h
+--- a/backport-include/linux/skbuff.h	2022-04-29 10:46:48.458383465 +0800
++++ b/backport-include/linux/skbuff.h	2022-04-29 10:48:40.719032308 +0800
+@@ -357,6 +357,7 @@
+ 	return tmp;
+ }
+ 
++#ifndef _LINUX_SKBUFF_H
+ static inline void *skb_put_data(struct sk_buff *skb, const void *data,
+ 				 unsigned int len)
+ {
+@@ -372,5 +373,6 @@
+ 	*(u8 *)skb_put(skb, 1) = val;
+ }
+ #endif
++#endif
+ 
+ #endif /* __BACKPORT_SKBUFF_H */

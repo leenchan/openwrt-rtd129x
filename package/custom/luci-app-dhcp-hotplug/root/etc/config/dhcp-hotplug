@@ -1,0 +1,9 @@
+
+config general
+	option enable '0'
+
+config dhcp_client
+	option name 'all'
+	option run 'echo "$(date "+%Y-%m-%d %H:%M:%S") $ACTION / $MACADDR / $IPADDR / $HOSTNAME"'
+	option enable '1'
+

@@ -1,0 +1,121 @@
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_br_ext.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_br_ext.c
+@@ -61,9 +61,13 @@ typedef struct udphdr udphdr;
+ #include <linux/ipv6.h>
+ #include <linux/icmpv6.h>
+ #include <net/ndisc.h>
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 24))
++#include <net/ip6_checksum.h>
++#else
+ #include <net/checksum.h>
+ #endif
+ #endif
++#endif
+ 
+ #ifdef RTK_BR_EXT
+ 
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_cfg80211.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_cfg80211.c
+@@ -712,7 +712,11 @@ int event_indicate_cfg80211(struct rtl81
+ 			{
+ 				//_eric_nl ?? disconnect event no mac, for station mode only ??
+ 				NDEBUG3("cfg80211_event [CFG80211_DISCONNECTED][%d]\n", event);
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)) || defined(OPENWRT_CC)
++				cfg80211_disconnected(priv->dev, 0, NULL, 0, 1, GFP_KERNEL);
++#else
+ 				cfg80211_disconnected(priv->dev, 0, NULL, 0, GFP_KERNEL);
++#endif
+ 				break;
+ 			}
+ 			break;
+@@ -803,10 +807,18 @@ int event_indicate_cfg80211(struct rtl81
+ 				if (priv->scan_req) 
+ 				{
+ 					struct cfg80211_scan_request *scan_req = priv->scan_req;
++					#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)) || defined(OPENWRT_CC)
++					struct cfg80211_scan_info info;
++					#endif
+ 					
+ 					priv->scan_req = NULL;
+-					
++					#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)) || defined(OPENWRT_CC)
++					memset(&info, 0, sizeof(info));
++					info.aborted = true;
++					cfg80211_scan_done(scan_req, &info);		
++					#else
+ 					cfg80211_scan_done(scan_req, true);		
++					#endif
+ 				}
+ 			}
+ 			break;
+@@ -828,9 +840,18 @@ int event_indicate_cfg80211(struct rtl81
+ 		        
+ 				if (priv->scan_req)
+ 				{
++					#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)) || defined(OPENWRT_CC)
++					struct cfg80211_scan_info info;
++					#endif
+ 					struct cfg80211_scan_request *scan_req = priv->scan_req;
+ 					priv->scan_req = NULL;				
++					#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)) || defined(OPENWRT_CC)
++					memset(&info, 0, sizeof(info));
++					info.aborted = false;
++					cfg80211_scan_done(scan_req, &info);		
++					#else
+ 					cfg80211_scan_done(scan_req, false);
++					#endif
+ 				}
+ 			}
+ 			break;
+@@ -4211,6 +4232,9 @@ void type_to_name(type, type_name)
+ 
+ static struct wireless_dev *realtek_cfg80211_add_iface(struct wiphy *wiphy,
+ 						      const char *name,
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
++						      char name_assign_type,
++#endif
+ 						      enum nl80211_iftype type,
+ 						      u32 *flags,
+ 						      struct vif_params *params)
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd.h
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd.h
+@@ -6837,6 +6837,17 @@ static inline int dev_hard_header(struct
+ }
+ #endif
+ 
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0)) || defined(OPENWRT_CC)
++#define ieee80211_band nl80211_band
++#define IEEE80211_BAND_2GHZ NL80211_BAND_2GHZ
++#define IEEE80211_BAND_5GHZ NL80211_BAND_5GHZ
++#define IEEE80211_NUM_BANDS NUM_NL80211_BANDS
++#else
++static inline void netif_trans_update(struct net_device *dev){
++	dev->trans_start = jiffies;
++}
++#endif
++
+ #ifndef CONFIG_VIRT_TO_BUS
+ #ifndef virt_to_bus
+ static inline unsigned long virt_to_bus(void *address)
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_tx.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_tx.c
+@@ -11385,7 +11385,7 @@ just_skip:
+ 	SMP_LOCK_XMIT(flags);
+ 
+ #ifdef __KERNEL__
+-	dev->trans_start = jiffies;
++	netif_trans_update(dev);
+ #endif
+ 
+ 	goto stop_proc;
+--- a/drivers/net/wireless/realtek/rtl8192cd/mesh_ext/mesh_tx.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/mesh_ext/mesh_tx.c
+@@ -141,7 +141,7 @@ issue_11s_mesh_actio_FAIL:
+ 	}
+ 
+ #ifdef __KERNEL__
+-	dev->trans_start = jiffies;
++	netif_trans_update(dev);
+ #endif
+ 
+ 	return 1;

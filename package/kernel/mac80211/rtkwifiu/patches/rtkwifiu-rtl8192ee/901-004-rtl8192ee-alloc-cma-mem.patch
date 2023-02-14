@@ -1,0 +1,165 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/hal/rtl8192e/pci/pci_ops_linux.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/hal/rtl8192e/pci/pci_ops_linux.c
+@@ -51,9 +51,15 @@ static int rtl8192ee_init_rx_ring(_adapter *padapter)
+ 	/* rx_queue_idx 1:RX_CMD_QUEUE */
+ 	for (rx_queue_idx = 0; rx_queue_idx < 1/*RX_MAX_QUEUE*/; rx_queue_idx++) {
+ 		precvpriv->rx_ring[rx_queue_idx].desc =
++#ifndef USE_DMA_ALLOCATE
+ 			pci_alloc_consistent(pdev,
+ 			sizeof(*precvpriv->rx_ring[rx_queue_idx].desc) * precvpriv->rxringcount,
+ 				     &precvpriv->rx_ring[rx_queue_idx].dma);
++#else
++			dma_alloc_coherent(pdvobjpriv->cma_dev,
++			sizeof(*precvpriv->rx_ring[rx_queue_idx].desc) * precvpriv->rxringcount,
++			&precvpriv->rx_ring[rx_queue_idx].dma, GFP_KERNEL);
++#endif
+ 
+ 		if (!precvpriv->rx_ring[rx_queue_idx].desc
+ 		    || (unsigned long)precvpriv->rx_ring[rx_queue_idx].desc & 0xFF) {
+@@ -121,7 +127,11 @@ static void rtl8192ee_free_rx_ring(_adapter *padapter)
+ 			kfree_skb(skb);
+ 		}
+ 
++#ifndef USE_DMA_ALLOCATE
+ 		pci_free_consistent(pdev,
++#else
++		dma_free_coherent(pdvobjpriv->cma_dev,
++#endif
+ 			    sizeof(*precvpriv->rx_ring[rx_queue_idx].desc) *
+ 				    precvpriv->rxringcount,
+ 				    precvpriv->rx_ring[rx_queue_idx].desc,
+@@ -144,7 +154,11 @@ static int rtl8192ee_init_tx_ring(_adapter *padapter, unsigned int prio, unsigne
+ 
+ 
+ 	RTW_INFO("%s entries num:%d\n", __func__, entries);
++#ifndef USE_DMA_ALLOCATE
+ 	ring = pci_alloc_consistent(pdev, sizeof(*ring) * entries, &dma);
++#else
++	ring = dma_alloc_coherent(pdvobjpriv->cma_dev, sizeof(*ring) * entries, &dma, GFP_KERNEL);
++#endif
+ 	if (!ring || (unsigned long)ring & 0xFF) {
+ 		RTW_INFO("Cannot allocate TX ring (prio = %d)\n", prio);
+ 		return _FAIL;
+@@ -191,7 +205,12 @@ static void rtl8192ee_free_tx_ring(_adapter *padapter, unsigned int prio)
+ 		}
+ 	}
+ 
+-	pci_free_consistent(pdev, sizeof(*ring->desc) * ring->entries, ring->desc, ring->dma);
++#ifndef USE_DMA_ALLOCATE
++	pci_free_consistent(pdev, 
++#else
++	dma_free_coherent(pdvobjpriv->cma_dev,
++#endif
++		sizeof(*ring->desc) * ring->entries, ring->desc, ring->dma);
+ 	ring->desc = NULL;
+ 
+ }
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/include/drv_types.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/include/drv_types.h
+@@ -1014,6 +1014,12 @@ struct dvobj_priv {
+ #ifdef CONFIG_FW_MULTI_PORT_SUPPORT
+ 	u8 default_port_id;
+ #endif
++
++#ifdef PLATFORM_LINUX
++#ifdef USE_DMA_ALLOCATE
++	struct device   *cma_dev;
++#endif
++#endif /* PLATFORM_LINUX */
+ 	/*-------- below is for SDIO INTERFACE --------*/
+ 
+ #ifdef INTF_DATA
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/os_dep/linux/pci_intf.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8192ee/os_dep/linux/pci_intf.c
+@@ -19,6 +19,25 @@
+ 
+ #include <linux/pci_regs.h>
+ 
++#ifdef USE_DMA_ALLOCATE
++#include <linux/device.h>
++#include <linux/miscdevice.h>
++#include <linux/module.h>
++#include <linux/dma-mapping.h>
++#include <linux/slab.h>
++
++static const struct file_operations cma_dev_fops = {
++       .owner =    THIS_MODULE,
++       .read  =    NULL,
++       .write =    NULL,
++};
++static struct miscdevice cma_dev_misc = {
++       .minor = MISC_DYNAMIC_MINOR,
++       .name = "cma_dev_8192ee",
++       .fops = &cma_dev_fops,
++};
++#endif
++
+ #ifndef CONFIG_PCI_HCI
+ 
+ 	#error "CONFIG_PCI_HCI shall be on!\n"
+@@ -1740,6 +1759,27 @@ static void rtw_pci_primary_adapter_deinit(_adapter *padapter)
+ #endif
+ }
+ 
++#ifdef USE_DMA_ALLOCATE
++static int cma_init(struct dvobj_priv *dvobj)
++{
++	int ret;
++
++	printk("****** %s %d\n", __FUNCTION__, __LINE__);
++	ret = misc_register(&cma_dev_misc);
++	if (unlikely(ret)) {
++		printk("****** %s %d, failed(%d) to register cma_dev_fops misc device!\n", __FUNCTION__, __LINE__, ret);
++		dvobj->cma_dev = NULL;
++	}
++	else {
++		dvobj->cma_dev = cma_dev_misc.this_device;
++		dvobj->cma_dev->coherent_dma_mask = ~0;
++		printk("****** %s %d, cma_dev %pa\n", __FUNCTION__, __LINE__, &dvobj->cma_dev);
++	}
++
++	return ret;
++}
++#endif
++
+ /*
+  * drv_init() - a device potentially for us
+  *
+@@ -1765,6 +1805,12 @@ static int rtw_drv_init(struct pci_dev *pdev, const struct pci_device_id *pdid)
+ 	if (dvobj == NULL)
+ 		goto exit;
+ 
++#ifdef USE_DMA_ALLOCATE
++	if (cma_init(dvobj)) {
++		goto free_dvobj;
++	}
++#endif
++
+ 	/* Initialize primary adapter */
+ 	padapter = rtw_pci_primary_adapter_init(dvobj, pdev);
+ 	if (padapter == NULL) {
+@@ -1828,6 +1874,12 @@ free_if_vir:
+ 		rtw_pci_primary_adapter_deinit(padapter);
+ 
+ free_dvobj:
++#ifdef USE_DMA_ALLOCATE
++	if (status != _SUCCESS) {
++		if (dvobj->cma_dev != NULL)
++			misc_deregister(&cma_dev_misc);
++	}
++#endif
+ 	if (status != _SUCCESS)
+ 		pci_dvobj_deinit(pdev);
+ exit:
+@@ -1908,6 +1960,11 @@ static void rtw_dev_remove(struct pci_dev *pdev)
+ 	rtw_drv_free_vir_ifaces(pdvobjpriv);
+ #endif
+ 
++#ifdef USE_DMA_ALLOCATE
++	if (pdvobjpriv->cma_dev != NULL)
++		misc_deregister(&cma_dev_misc);
++#endif
++
+ 	pci_dvobj_deinit(pdev);
+ 
+ 	RTW_INFO("-r871xu_dev_remove, done\n");

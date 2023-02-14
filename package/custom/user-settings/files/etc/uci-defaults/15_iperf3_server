@@ -1,0 +1,17 @@
+#!/bin/sh
+
+uci -q get iperf3-server || exit 0
+
+uci -q batch <<-EOF >/dev/null
+	set iperf3-server.@iperf3-server[0]=iperf3-server
+	set iperf3-server.@iperf3-server[0].enable='0'
+	set iperf3-server.@iperf3-server[0].port='5201'
+	set iperf3-server.@iperf3-server[0].main_enable='1'
+	add iperf3-server servers
+	set iperf3-server.@servers[-1].enable_server='1'
+	set iperf3-server.@servers[-1].port='5201'
+	set iperf3-server.@servers[-1].delay='0'
+	commit iperf3-server
+EOF
+
+exit 0

@@ -1,0 +1,13 @@
+#!/bin/sh
+
+uci -q get nginx || exit 0
+
+uci -q batch <<-EOF >/dev/null
+	set system.@system[0].zonename='Asia/Shanghai'
+	set system.@system[0].timezone='CST-8'
+	commit system
+EOF
+
+/etc/init.d/system restart
+
+exit 0

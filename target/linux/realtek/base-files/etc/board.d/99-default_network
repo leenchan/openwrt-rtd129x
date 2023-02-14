@@ -1,0 +1,37 @@
+#!/bin/sh
+
+. /lib/functions/uci-defaults.sh
+
+board_config_update
+
+json_is_a network object && exit 0
+
+board=$(board_name)
+
+ipaddr="192.168.100.1"
+lan_if="eth0"
+
+case "$board" in
+Realtek,rtd-129*)
+	if readlink /sys/class/net/eth1 | grep -qFw platform; then
+		lan_if="eth1"
+		ucidef_set_interface_wan "eth0" "dhcp"
+	fi
+    if [ -e /proc/device-tree/chosen/default-ip ]; then
+        ipaddr=`cat /proc/device-tree/chosen/default-ip`
+    fi
+	;;
+*)
+	;;
+esac
+
+if [[ "$lan_if" = "eth0" ]]; then
+	ucidef_set_interface_lan "eth0" "dhcp"
+else
+	ucidef_set_interface_lan "eth1" "static"
+	ucidef_set_interface "lan" ipaddr "$ipaddr"
+fi
+
+board_config_flush
+
+exit 0

@@ -1,0 +1,10 @@
+#!/bin/sh
+
+uci -q get upnpd || exit 0
+
+uci -q batch <<-EOF >/dev/null
+	set upnpd.config.enabled='1'
+	commit upnpd
+EOF
+
+exit 0

@@ -1,0 +1,14 @@
+#!/bin/sh
+FIREWALL_ZONNE_FILE="/www/luci-static/resources/view/firewall/zones.js"
+
+[ -f "/usr/lib/iptables/libipt_FULLCONENAT.so" ] || exit 0
+[ -f "$FIREWALL_ZONNE_FILE" ] || exit 0
+grep -q "fullcone" "$FIREWALL_ZONNE_FILE" && exit 0
+
+sed -Ei "s/(\/\* Netfilter flow offload support \*\/)/o = s.option(form.Flag, 'fullcone', _('Enable FullCone-NAT'));\1/" "$FIREWALL_ZONNE_FILE"
+uci -q batch <<-EOF >/dev/null
+	set firewall.@defaults[0].fullcone='1'
+	commit firewall
+EOF
+
+exit 0

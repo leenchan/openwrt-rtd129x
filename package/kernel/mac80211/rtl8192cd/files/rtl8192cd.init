@@ -1,0 +1,8 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2006 OpenWrt.org
+
+START=11
+
+start() {
+	lsmod | grep -q '^rtl8192cd' && [ -x "/usr/local/sbin/load_calibration" ] && /usr/local/sbin/load_calibration
+}

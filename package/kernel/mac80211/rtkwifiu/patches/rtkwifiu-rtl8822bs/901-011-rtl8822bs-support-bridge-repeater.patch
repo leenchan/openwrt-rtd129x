@@ -1,0 +1,164 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/core/rtw_br_ext.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/core/rtw_br_ext.c
+@@ -530,7 +530,7 @@ static void __nat25_db_print(_adapter *priv)
+ 
+ 	counter++;
+ 	if ((counter % 16) != 0)
+-		return;
++		goto __nat25_db_print_end;
+ 
+ 	for (i = 0, j = 0; i < NAT25_HASH_SIZE; i++) {
+ 		db = priv->nethash[i];
+@@ -594,7 +594,7 @@ static void __nat25_db_print(_adapter *priv)
+ 		}
+ 	}
+ #endif
+-
++__nat25_db_print_end:
+ 	_exit_critical_bh(&priv->br_ext_lock, &irqL);
+ }
+ 
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/core/rtw_xmit.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/core/rtw_xmit.c
+@@ -1468,7 +1468,8 @@ static s32 update_attrib(_adapter *padapter, _pkt *pkt, struct pkt_attrib *pattr
+ 	} else if (0x888e == pattrib->ether_type)
+ 		RTW_PRINT("send eapol packet\n");
+ 
+-	if ((pattrib->ether_type == 0x888e) || (pattrib->dhcp_pkt == 1))
++	if ((pattrib->ether_type == 0x888e) 
++	|| ((pattrib->dhcp_pkt == 1) && (check_fwstate(&padapter->mlmepriv, WIFI_AP_STATE) == _FALSE)))
+ 		rtw_mi_set_scan_deny(padapter, 3000);
+ 
+ #ifdef RTW_IP_REACHABILITY_PATCH
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/include/osdep_service_linux.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/include/osdep_service_linux.h
+@@ -123,6 +123,10 @@
+ 	#include <linux/netlink.h>
+ #endif /* CONFIG_BT_COEXIST_SOCKET_TRX */
+ 
++#ifdef CONFIG_BR_EXT
++	#include <../net/bridge/br_private.h>
++#endif
++
+ #ifdef CONFIG_USB_HCI
+ 	typedef struct urb   *PURB;
+ 	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 22))
+@@ -488,5 +492,12 @@ extern struct net_device *rtw_alloc_etherdev(int sizeof_priv);
+ 
+ #define STRUCT_PACKED __attribute__ ((packed))
+ 
++#ifdef CONFIG_BR_EXT 
++#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,35)
++#define GET_BR_PORT(netdev)	(netdev)->br_port
++#else
++#define GET_BR_PORT(netdev)	br_port_get_rcu(netdev)
++#endif
++#endif //CONFIG_BR_EXT
+ 
+ #endif
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/os_dep/linux/os_intfs.c
+@@ -2548,6 +2548,10 @@ void rtw_intf_stop(_adapter *adapter)
+ 		adapter->intf_stop(adapter);
+ }
+ 
++#ifdef CONFIG_BR_EXT
++void netdev_br_init(struct net_device *netdev);
++#endif
++
+ #ifdef CONFIG_CONCURRENT_MODE
+ int _netdev_vir_if_open(struct net_device *pnetdev)
+ {
+@@ -2619,6 +2623,10 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
+ 
+ 	rtw_netif_wake_queue(pnetdev);
+ 
++#ifdef CONFIG_BR_EXT
++	netdev_br_init(pnetdev);
++#endif /* CONFIG_BR_EXT */
++
+ 	RTW_INFO(FUNC_NDEV_FMT" (bup=%d) exit\n", FUNC_NDEV_ARG(pnetdev), padapter->bup);
+ 
+ 	return 0;
+@@ -3142,48 +3150,18 @@ void rtw_os_ndevs_deinit(struct dvobj_priv *dvobj)
+ void netdev_br_init(struct net_device *netdev)
+ {
+ 	_adapter *adapter = (_adapter *)rtw_netdev_priv(netdev);
++	struct net_bridge_port *br_port;
+ 
+-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 35))
+-	rcu_read_lock();
+-#endif /* (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 35)) */
+-
+-	/* if(check_fwstate(pmlmepriv, WIFI_STATION_STATE|WIFI_ADHOC_STATE) == _TRUE) */
+-	{
+-		/* struct net_bridge	*br = netdev->br_port->br; */ /* ->dev->dev_addr; */
+-#if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35))
+-		if (netdev->br_port)
+-#else   /* (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)) */
+-		if (rcu_dereference(adapter->pnetdev->rx_handler_data))
+-#endif /* (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 35)) */
+-		{
+-			struct net_device *br_netdev;
+-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24))
+-			br_netdev = dev_get_by_name(CONFIG_BR_EXT_BRNAME);
+-#else	/* (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)) */
+-			struct net *devnet = NULL;
+-
+-#if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 26))
+-			devnet = netdev->nd_net;
+-#else	/* (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 26)) */
+-			devnet = dev_net(netdev);
+-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 26)) */
+-
+-			br_netdev = dev_get_by_name(devnet, CONFIG_BR_EXT_BRNAME);
+-#endif /* (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 24)) */
+-
+-			if (br_netdev) {
+-				memcpy(adapter->br_mac, br_netdev->dev_addr, ETH_ALEN);
+-				dev_put(br_netdev);
+-			} else
+-				printk("%s()-%d: dev_get_by_name(%s) failed!", __FUNCTION__, __LINE__, CONFIG_BR_EXT_BRNAME);
+-		}
+-
+-		adapter->ethBrExtInfo.addPPPoETag = 1;
++	if(netdev->priv_flags & IFF_DONT_BRIDGE) {
++		//printk("Unable to be bridged !! Unlock for this iface !!\n");
++		netdev->priv_flags &= ~(IFF_DONT_BRIDGE);
+ 	}
+ 
+-#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 35))
+-	rcu_read_unlock();
+-#endif /* (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 35)) */
++	br_port = GET_BR_PORT(netdev);
++	if(br_port)
++		memcpy(adapter->br_mac, br_port->br->dev->dev_addr, ETH_ALEN);
++
++	adapter->ethBrExtInfo.addPPPoETag = 1;
+ }
+ #endif /* CONFIG_BR_EXT */
+ 
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/os_dep/linux/rtw_cfgvendor.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/os_dep/linux/rtw_cfgvendor.h
+@@ -311,7 +311,9 @@ typedef unsigned char byte;
+ typedef int wifi_request_id;
+ typedef int wifi_channel;                       // indicates channel frequency in MHz
+ typedef int wifi_rssi;
++#ifndef CONFIG_BR_EXT
+ typedef byte mac_addr[6];
++#endif
+ typedef byte oui[3];
+ typedef int64_t wifi_timestamp;                 // In microseconds (us)
+ typedef int64_t wifi_timespan;                  // In picoseconds  (ps)
+@@ -593,7 +595,11 @@ typedef struct {
+ typedef struct {
+     u8 version;
+     s8 cur_rssi;
++#ifdef CONFIG_BR_EXT
++    u8 BSSID[6];
++#else
+     mac_addr BSSID;
++#endif
+ } rssi_monitor_evt;
+ 
+ 

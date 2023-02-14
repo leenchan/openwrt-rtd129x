@@ -1,0 +1,45 @@
+#!/bin/sh
+. /lib/functions.sh
+. /lib/functions/network.sh
+
+LOG_FILE="/var/log/dhcp-hotplug.txt"
+
+example() {
+	iwinfo wlan0 assoclist | grep SNR
+	ubus call hostapd.wlan0 del_client "{'addr':'$MAC', 'reason':5, 'deauth':false, 'ban_time':0}"
+}
+
+print_msg() {
+	_TIME_=$(date "+%Y-%m-%d %H:%M:%S")
+	_MSG_="[$_TIME_] $@"
+	echo "$_MSG_" | tee -a $LOG_FILE
+}
+
+main() {
+	config_get enable $1 "enable"
+}
+
+dhcp_client_run() {
+	config_get enable $1 "enable"
+	[ "$enable" = "1" ] || return 1
+	config_get mac $1 "mac"
+	config_get ip $1 "ip"
+	# echo "$(date "+%Y-%m-%d %H:%M:%S") $ACTION / $MACADDR / $IPADDR / $HOSTNAME" >> $LOG_FILE
+	[ -z "$mac" -a -z "$ip" ] || {
+		MATCH_DHCP_CLIENT=""
+		echo "$mac" | tr ' ' '\n' | grep -Eiq "^$MACADDR$" || echo "$ip" | tr ' ' '\n' | grep -Eiq "^$IPADDR$" || return 1
+	}
+	config_get run $1 "run"
+	eval "$run" >> "$LOG_FILE"
+	return 0
+}
+
+dhcp_client_trigger() {
+	config_load "dhcp-hotplug"
+	config_foreach main "general"
+	[ "$enable" = "1" ] || return 1
+	env | grep -q '^HOSTNAME=' || HOSTNAME="*"
+	config_foreach dhcp_client_run "dhcp_client"
+}
+
+dhcp_client_trigger &

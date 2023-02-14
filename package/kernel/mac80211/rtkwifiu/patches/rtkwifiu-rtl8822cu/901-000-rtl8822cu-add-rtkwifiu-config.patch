@@ -1,0 +1,8 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822cu/Kconfig
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822cu/Kconfig
+@@ -1,4 +1,4 @@
+-config RTL8822BU
++config RTL8822CU
+ 	tristate "Realtek 8822C USB WiFi"
+ 	depends on USB
+ 	---help---

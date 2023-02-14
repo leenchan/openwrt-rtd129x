@@ -1,0 +1,85 @@
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_cfg80211.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_cfg80211.c
+@@ -629,6 +629,9 @@ void event_to_name(int event, char *even
+ 	case CFG80211_RADAR_DETECTED:
+ 		strcpy(event_name, "CFG80211_RADAR_DETECTED");
+ 		break;
++	case CFG80211_RADAR_CAC_ABORTED:
++		strcpy(event_name, "CFG80211_RADAR_CAC_ABORTED");
++		break;
+ 	default:
+ 		strcpy(event_name, "UNKNOWN EVENT");
+ 		break;
+@@ -656,7 +659,7 @@ int event_indicate_cfg80211(struct rtl81
+ 	}
+ 
+     /*cfg p2p 2014-0330 , report CFG80211_NEW_STA , ASAP*/ 
+-	if( (event != CFG80211_SCAN_DONE)  && (event != CFG80211_NEW_STA) && (event != CFG80211_DEL_STA) && (event != CFG80211_RADAR_CAC_FINISHED) ){ //eric-bb
++	if( (event != CFG80211_SCAN_DONE)  && (event != CFG80211_NEW_STA) && (event != CFG80211_DEL_STA) && (event != CFG80211_RADAR_CAC_FINISHED) && (event != CFG80211_RADAR_CAC_ABORTED) && (event != CFG80211_RADAR_DETECTED) ){ //eric-bb
+     	if( (OPMODE & WIFI_AP_STATE) && (priv->up_time <= HAPD_READY_RX_EVENT) ) 
+     	{
+     		NLMSG("ignore cfg event,up_time[%d],event[%d]\n", priv->up_time,event);
+@@ -861,15 +864,17 @@ int event_indicate_cfg80211(struct rtl81
+ 			break;
+ 		case CFG80211_RADAR_CAC_FINISHED:
+ 			if (priv->pshare->dfs_chan_def && priv->wdev.cac_started) {
++				priv->pshare->keep_cac_start = true;
+ 				NDEBUG("cfg80211_event [CFG80211_RADAR_CAC_FINISHED][%d]\n", event);
+ 				cfg80211_cac_event(priv->dev, priv->pshare->dfs_chan_def, NL80211_RADAR_CAC_FINISHED, GFP_KERNEL);
++				priv->wdev.cac_started = true; //keep radar detection
+ 			}
+ 			break;
+ 		case CFG80211_RADAR_DETECTED:
+ 			if (priv->pshare->dfs_chan_def && priv->wdev.cac_started) {
+ 				NDEBUG("cfg80211_event [CFG80211_RADAR_DETECTED][%d]\n", event);
+-				cfg80211_radar_event(wiphy, priv->pshare->dfs_chan_def, GFP_KERNEL);
+ 				cfg80211_cac_event(priv->dev, priv->pshare->dfs_chan_def, NL80211_RADAR_CAC_ABORTED, GFP_KERNEL);
++				cfg80211_radar_event(wiphy, priv->pshare->dfs_chan_def, GFP_KERNEL);
+ 				priv->pmib->dot11DFSEntry.DFS_detected = 0;
+ 			}
+ 			break;
+@@ -1745,6 +1750,9 @@ static int realtek_stop_ap(struct wiphy
+ 		NLINFO("Repeater! Do nothing\n");
+ 	} else {
+ 		ret = realtek_cfg80211_del_beacon(wiphy, dev);
++		/*fixme, should not enable carrier here.
++		 Under mac80211 architecture will be invoked by compatible-wireless */
++		netif_carrier_off(dev);
+ 	}
+ 
+ 	NLEXIT;
+@@ -3489,10 +3497,6 @@ static int realtek_start_radar_detection
+ 
+ 	NLENTER;
+ 
+-	/*fixme, should not enable carrier here.
+-	 Under mac80211 architecture will be invoked by compatible-wireless */
+-	netif_carrier_on(priv->dev);
+-
+ 	if(priv->pshare->dfs_chan_def) {
+ 		if(priv->pshare->dfs_chan_def->chan)
+ 			kfree(priv->pshare->dfs_chan_def->chan);
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd.h
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd.h
+@@ -4530,6 +4530,7 @@ struct priv_shared_info {
+ #endif
+ #if defined(RTK_NL80211)
+ 	volatile struct cfg80211_chan_def *dfs_chan_def;
++	unsigned char	keep_cac_start;
+ #endif
+ 
+ #if defined(HS2_SUPPORT) || defined(DOT11K)
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
+@@ -9721,8 +9721,10 @@ int rtl8192cd_close(struct net_device *d
+ #endif
+ 
+ #ifdef DFS
+-	if (priv->wdev.cac_started) 
++	if (priv->wdev.cac_started && !priv->pshare->keep_cac_start) {
+ 		event_indicate_cfg80211(priv, NULL, CFG80211_RADAR_CAC_ABORTED, NULL);
++	} else
++		priv->pshare->keep_cac_start = false;
+ #endif
+ 
+ 	if (priv->scan_req || (priv->pshare->bScanInProcess == TRUE))

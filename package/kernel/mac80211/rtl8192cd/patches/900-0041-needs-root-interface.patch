@@ -1,0 +1,54 @@
+--- a/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
++++ b/drivers/net/wireless/realtek/rtl8192cd/8192cd_osdep.c
+@@ -7309,7 +7309,7 @@ int is_iface_ready_nl80211(struct net_de
+ 
+ 	if (priv->drv_state & DRV_STATE_OPEN)
+ 	{
+-		DEBUG_INFO(" [%s] DO NOT double OPEN !!\n", dev->name);
++		DEBUG_ERR(" [%s] DO NOT double OPEN !!\n", dev->name);
+ 		return 0;
+ 	}
+ 	else
+@@ -7324,13 +7324,13 @@ int is_iface_ready_nl80211(struct net_de
+ 	{
+ 		if(!IS_DRV_OPEN(GET_ROOT(priv)))	
+ 		{
+-			DEBUG_INFO("Root interface NOT OPEN yet !!\n");
++			DEBUG_ERR("Root interface NOT OPEN yet !!\n");
+ 			return 0;
+ 		}
+ 
+ 		if(IS_VXD_INTERFACE(priv) && (priv->rtk->num_vxd < 1))
+ 		{
+-			DEBUG_INFO("VXD if already deleted or NOT added !!\n");
++			DEBUG_ERR("VXD if already deleted or NOT added !!\n");
+ 			return 0;
+ 		}
+ 
+@@ -7338,7 +7338,7 @@ int is_iface_ready_nl80211(struct net_de
+ 		{
+ 			if(!is_WRT_scan_iface(dev->name)) //eric-vap
+ 			{
+-				DEBUG_INFO("VAP already deleted or NOT added !!\n");
++				DEBUG_ERR("VAP already deleted or NOT added !!\n");
+ 				return 0;
+ 			}
+ 		}
+@@ -7347,7 +7347,7 @@ int is_iface_ready_nl80211(struct net_de
+ 
+ 	if(is_WRT_scan_iface(dev->name))
+ 	{
+-		DEBUG_INFO("No need to call open for scan iface !!\n");
++		DEBUG_ERR("No need to call open for scan iface !!\n");
+ 		return 0;
+ 	}
+ 
+@@ -7438,7 +7438,7 @@ int rtl8192cd_open(struct net_device *de
+ #endif
+ 	{
+ 		if(!is_iface_ready_nl80211(dev, priv))
+-			return 0;
++			return -1;
+ 	
+ 		prepare_iface_nl80211(dev, priv);
+ 	}

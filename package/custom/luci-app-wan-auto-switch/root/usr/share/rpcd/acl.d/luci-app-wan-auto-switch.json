@@ -1,0 +1,17 @@
+{
+	"luci-app-wan-auto-switch": {
+		"description": "Grant access to WAN Auto-Switch",
+		"read": {
+			"cgi-io": [ "exec" ],
+			"file": {
+				"/etc/hotplug.d/iface/10-wan-auto-switch": [ "exec" ],
+				"/var/log/wan-auto-switch.txt": [ "read" ]
+			},
+			"uci": [ "wan-auto-switch" ]
+		},
+		"write": {
+			"uci": [ "wan-auto-switch" ]
+		}
+	}
+}
+

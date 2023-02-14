@@ -1,0 +1,54 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822be/os_dep/linux/ioctl_cfg80211.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822be/os_dep/linux/ioctl_cfg80211.c
+@@ -7165,6 +7165,26 @@ void rtw_cfg80211_init_wdev_data(_adapter *padapter)
+ #endif
+ }
+ 
++#if defined(CONFIG_80211AC_VHT) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
++static void rtw_cfg80211_init_vht_capab(_adapter *padapter
++	, struct ieee80211_sta_vht_cap *sta_vht_cap, BAND_TYPE band, u8 rf_type)
++{
++	struct registry_priv *regsty = &padapter->registrypriv;
++	u8 vht_cap_ie[2 + 12] = {0};
++
++	if (!REGSTY_IS_11AC_ENABLE(regsty) || !is_supported_vht(regsty->wireless_mode))
++		return;
++
++	rtw_vht_use_default_setting(padapter);
++	rtw_build_vht_cap_ie(padapter, vht_cap_ie);
++
++	sta_vht_cap->vht_supported = 1;
++
++	_rtw_memcpy(&sta_vht_cap->cap, vht_cap_ie + 2, 4);
++	_rtw_memcpy(&sta_vht_cap->vht_mcs, vht_cap_ie + 2 + 4, 8);
++}
++#endif /* defined(CONFIG_80211AC_VHT) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)) */
++
+ void rtw_cfg80211_init_wiphy(_adapter *padapter)
+ {
+ 	u8 rf_type;
+@@ -7184,8 +7204,12 @@ void rtw_cfg80211_init_wiphy(_adapter *padapter)
+ #ifdef CONFIG_IEEE80211_BAND_5GHZ
+ 	if (is_supported_5g(padapter->registrypriv.wireless_mode)) {
+ 		band = wiphy->bands[NL80211_BAND_5GHZ];
+-		if (band)
++		if (band) {
+ 			rtw_cfg80211_init_ht_capab(padapter, &band->ht_cap, BAND_ON_5G, rf_type);
++			#if defined(CONFIG_80211AC_VHT) && (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0))
++			rtw_cfg80211_init_vht_capab(padapter, &band->vht_cap, BAND_ON_5G, rf_type);
++			#endif
++		}
+ 	}
+ #endif
+ 
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822be/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822be/os_dep/linux/os_intfs.c
+@@ -238,7 +238,7 @@ int rtw_bfee_rf_number = 0; /*BeamformeeCapRfNum  Rf path number, 0 for auto, ot
+ #endif /* CONFIG_80211N_HT */
+ 
+ #ifdef CONFIG_80211AC_VHT
+-int rtw_vht_enable = 2; /* 0:disable, 1:enable, 2:force auto enable */
++int rtw_vht_enable = 1; /* 0:disable, 1:enable, 2:force auto enable */
+ module_param(rtw_vht_enable, int, 0644);
+ 
+ int rtw_ampdu_factor = 7;

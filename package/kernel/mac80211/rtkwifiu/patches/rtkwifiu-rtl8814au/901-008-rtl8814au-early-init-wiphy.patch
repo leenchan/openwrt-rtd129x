@@ -1,0 +1,39 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8814au/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8814au/os_dep/linux/os_intfs.c
+@@ -1839,7 +1839,7 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
+ 		}
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ #endif
+ 
+ 		padapter->bup = _TRUE;
+@@ -2167,7 +2167,7 @@ int _netdev_if2_open(struct net_device *pnetdev)
+ 		}
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ #endif
+ 
+ 		padapter->bup = _TRUE;
+@@ -2481,6 +2481,9 @@ int rtw_os_ndevs_register(struct dvobj_priv *dvobj)
+ 				rtw_warn_on(1);
+ 				break;
+ 			}
++#ifdef CONFIG_IOCTL_CFG80211
++			rtw_cfg80211_init_wiphy(adapter);
++#endif
+ 		}
+ 	}
+ 
+@@ -2722,7 +2725,7 @@ int _netdev_open(struct net_device *pnetdev)
+ 		}
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ #endif
+ 
+ 		rtw_led_control(padapter, LED_CTL_NO_LINK);

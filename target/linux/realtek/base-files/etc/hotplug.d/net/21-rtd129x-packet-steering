@@ -1,0 +1,20 @@
+#!/bin/sh
+[ "$ACTION" = add ] || [ "$ACTION" = remove -a "$DEVTYPE" = ppp ] || exit
+
+NPROCS="$(grep -c "^processor.*:" /proc/cpuinfo)"
+[ "$NPROCS" -eq 4 ] || exit
+
+grep -Fq rtd-1296 /proc/device-tree/compatible || exit
+
+cd /sys/class/net || exit
+
+[ -e eth0 -a -e eth1 ] || exit
+
+exec 512>/var/lock/smp_tune.lock
+flock 512 || exit 1
+
+[ "`cat eth0/queues/rx-0/rps_cpus`" = "a" ] && exit
+echo 5 > eth1/queues/rx-0/rps_cpus
+echo e > eth1/queues/tx-0/xps_cpus
+echo a > eth0/queues/rx-0/rps_cpus
+echo 7 > eth0/queues/tx-0/xps_cpus

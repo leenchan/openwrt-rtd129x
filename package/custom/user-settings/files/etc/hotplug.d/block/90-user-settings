@@ -1,0 +1,23 @@
+LOG_FILE="/var/log/user-settings.txt"
+echo "[$(date "+%Y-%m-%d %H:%M:%S")] /dev/$DEVNAME: $ACTION" >> $LOG_FILE
+
+auto_run() {
+    [ "$DEVTYPE" = "partition" ] || return 1
+    RETRY=3
+    while true; do
+        [ "$RETRY" -le 0 ] && break
+        MOUNT_POINT=$(mount | awk "\$1==\"/dev/$DEVNAME\"{print \$3}")
+        [ -z "$MOUNT_POINT" ] || break
+        sleep 1
+        RETRY=$((RETRY-1))
+    done
+    [ -z "$MOUNT_POINT" ] || {
+        echo "[$(date "+%Y-%m-%d %H:%M:%S")] /dev/$DEVNAME -> $MOUNT_POINT" >> $LOG_FILE
+        export LOG_FILE=$LOG_FILE
+        [ -f "$MOUNT_POINT/openwrt/run.sh" ] && sh "$MOUNT_POINT/openwrt/run.sh"
+    }
+}
+
+[ "$ACTION" = "add" ] && {
+    auto_run &
+}

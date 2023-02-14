@@ -1,0 +1,112 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/include/autoconf.h
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/include/autoconf.h
+@@ -322,4 +322,6 @@
+ #define DBG_XMIT_BUF_EXT
+ #define CONFIG_FW_C2H_DEBUG
+ #define DBG_THREAD_PID
+-#endif
+\ No newline at end of file
++#endif
++
++#define SUPPORT_RX_UNI2MCAST
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/os_dep/linux/recv_linux.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8822bs/os_dep/linux/recv_linux.c
+@@ -391,6 +391,77 @@ int rtw_recv_napi_poll(struct napi_struct *napi, int budget)
+ }
+ #endif /* CONFIG_RTW_NAPI */
+ 
++#ifdef SUPPORT_RX_UNI2MCAST
++#define IP_MCAST_MAC(mac)	((mac[0]==0x01)&&(mac[1]==0x00)&&(mac[2]==0x5e))
++#define ICMPV6_MCAST_MAC(mac)	((mac[0]==0x33)&&(mac[1]==0x33)&&(mac[2]!=0xff))
++
++static unsigned int check_mcastL2L3Diff(struct sk_buff *skb)
++{
++	unsigned int DaIpAddr;
++	struct iphdr* iph = (struct iphdr *)(skb->data + ETH_HLEN);
++
++	DaIpAddr = ntohl(iph->daddr);
++	//printk("ip:%d, %d ,%d ,%d\n",(DaIpAddr>>24) ,(DaIpAddr<<8)>>24,(DaIpAddr<<16)>>24,(DaIpAddr<<24)>>24);
++
++	if (((DaIpAddr & 0xFF000000) >= 0xE0000000) && ((DaIpAddr & 0xFF000000) <= 0xEF000000)) {
++		if (!IP_MCAST_MAC(skb->data))
++			return DaIpAddr;
++	}
++	return 0;
++}
++
++
++static void ConvertMCastIPtoMMac(unsigned int group, unsigned char *gmac)
++{
++	unsigned int u32tmp, tmp;
++	static int i;
++
++	u32tmp = group & 0x007FFFFF;
++	gmac[0] = 0x01;
++	gmac[1] = 0x00;
++	gmac[2] = 0x5e;
++
++	for (i=5; i>=3; i--) {
++		tmp = u32tmp & 0xFF;
++		gmac[i] = tmp;
++		u32tmp >>= 8;
++	}
++}
++
++
++static void CheckUDPandU2M(_pkt *pskb)
++{
++	int MultiIP;
++
++	MultiIP = check_mcastL2L3Diff(pskb);
++	if (MultiIP) {
++		unsigned char mactmp[6];
++		ConvertMCastIPtoMMac(MultiIP, mactmp);
++		RTW_DBG("%02x%02x%02x:%02x%02x%02x\n", mactmp[0],mactmp[1],mactmp[2],
++		      mactmp[3],mactmp[4],mactmp[5]);
++		memcpy(pskb->data, mactmp, 6);
++		/*added by qinjunjie,warning:should not remove next line*/
++		pskb->pkt_type = PACKET_MULTICAST;
++	}
++}
++
++static void CheckV6UDPandU2M(_pkt *pskb)
++{
++	struct ipv6hdr *iph = (struct ipv6hdr *)(pskb->data + ETH_HLEN);
++	unsigned char *DDA=pskb->data;	
++
++	if (iph->daddr.s6_addr[0] == 0xff){
++		/*mac is not ipv6 multicase mac*/
++		if(!ICMPV6_MCAST_MAC(DDA) ){
++			/*change mac (DA) to (ipv6 multicase mac) format by (ipv6 multicast ip)*/
++			DDA[0] = 0x33;
++			DDA[1] = 0x33;
++			memcpy(DDA+2, &iph->daddr.s6_addr[12], 4);
++		}
++	}
++}
++#endif /* SUPPORT_RX_UNI2MCAST */
++
+ void rtw_os_recv_indicate_pkt(_adapter *padapter, _pkt *pkt, union recv_frame *rframe)
+ {
+ 	struct mlme_priv *pmlmepriv = &padapter->mlmepriv;
+@@ -450,6 +521,20 @@ void rtw_os_recv_indicate_pkt(_adapter *padapter, _pkt *pkt, union recv_frame *r
+ 				DBG_COUNTER(padapter->rx_logs.os_indicate_ap_self);
+ 			}
+ 		}
++#ifdef SUPPORT_RX_UNI2MCAST
++		else if (MLME_IS_STA(padapter)) {
++			unsigned short L3_protocol;
++			unsigned char *DA_START;
++
++			L3_protocol = *(unsigned short *)(pkt->data + ETH_ALEN * 2);
++			DA_START = skb_mac_header(pkt);
++
++			if( L3_protocol == __constant_htons(0x0800) )
++				CheckUDPandU2M(pkt);
++			else if (L3_protocol == __constant_htons(0x86dd) && *(unsigned char *)(pkt->data + 20) == 0x11)
++				CheckV6UDPandU2M(pkt);
++		}
++#endif /* SUPPORT_RX_UNI2MCAST */
+ 
+ #ifdef CONFIG_BR_EXT
+ 		if (check_fwstate(pmlmepriv, WIFI_STATION_STATE | WIFI_ADHOC_STATE) == _TRUE) {

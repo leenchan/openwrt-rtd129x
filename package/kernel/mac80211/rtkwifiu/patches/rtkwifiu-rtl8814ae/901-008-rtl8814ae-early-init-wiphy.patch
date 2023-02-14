@@ -1,0 +1,30 @@
+--- a/drivers/net/wireless/realtek/rtkwifiu/rtl8814ae/os_dep/linux/os_intfs.c
++++ b/drivers/net/wireless/realtek/rtkwifiu/rtl8814ae/os_dep/linux/os_intfs.c
+@@ -2165,7 +2165,7 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
+ 			goto _netdev_virtual_iface_open_error;
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ 		rtw_cfg80211_init_wdev_data(padapter);
+ #endif
+ 
+@@ -2481,6 +2481,9 @@ int rtw_os_ndevs_register(struct dvobj_priv *dvobj)
+ 				rtw_warn_on(1);
+ 				break;
+ 			}
++#ifdef CONFIG_IOCTL_CFG80211
++			rtw_cfg80211_init_wiphy(adapter);
++#endif
+ 		}
+ 	}
+ 
+@@ -2662,7 +2665,7 @@ int _netdev_open(struct net_device *pnetdev)
+ 		rtw_intf_start(padapter);
+ 
+ #ifdef CONFIG_IOCTL_CFG80211
+-		rtw_cfg80211_init_wiphy(padapter);
++		/* rtw_cfg80211_init_wiphy(padapter); */
+ 		rtw_cfg80211_init_wdev_data(padapter);
+ #endif
+ 

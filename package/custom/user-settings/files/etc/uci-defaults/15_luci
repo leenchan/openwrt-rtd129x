@@ -1,0 +1,16 @@
+#!/bin/sh
+
+[ -z "$(cat /sys/class/thermal/thermal_zone0/temp)" ] && exit 0
+grep -q 'cpuTemp' /www/luci-static/resources/view/status/include/10_system.js && exit 0
+
+sed -Ei \
+  -e 's|("/usr/lib/lua/luci/version.lua":\s*\[\s*"read"\s*\])|"/sys/class/thermal/thermal_zone0/temp": [ "read" ],\1|' \
+  /usr/share/rpcd/acl.d/luci-mod-status.json
+
+sed -Ei \
+  -e "s|(\s*)(fs.lines\('/usr/lib/lua/luci/version.lua'\))|\1fs.trimmed('/sys/class/thermal/thermal_zone0/temp'),\2|" \
+  -e "s|(luciversion\s*=\s*data)(\[2\])|cpuTemp = data[2],\1[3]|" \
+  -e "s|(_\('Load Average'\))|_('CPU Temp'), cpuTemp * 1 > 0 ? '%.1f °C'.format(cpuTemp/1000) : null,\1|" \
+  /www/luci-static/resources/view/status/include/10_system.js
+
+exit 0
