@@ -3,8 +3,7 @@
 .*.swp
 /env
 /dl
-/.config*
-/backup
+# /.config*
 /bin
 /build_dir
 /staging_dir
